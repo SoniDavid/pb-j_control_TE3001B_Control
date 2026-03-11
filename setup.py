@@ -18,6 +18,7 @@ setup(
         ('share/' + package_name + '/models', glob('models/*')),
         ('share/' + package_name + '/worlds', glob('worlds/*')),
         ('share/' + package_name + '/rviz', glob('rviz/*')),
+        ('share/' + package_name + '/arduino', glob('arduino/**/*.ino', recursive=True)),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -30,6 +31,8 @@ setup(
         'console_scripts': [
             # ── Simulation ──
             'puzzlebot_sim       = puzzlebot_control.puzzlebot_sim:main',
+            # ── Hardware bridge ──
+            'puzzlebot_hardware  = puzzlebot_control.puzzlebot_hardware:main',
             'terrain_perturb     = puzzlebot_control.terrain_perturbation:main',
             # ── Controllers ──
             'pid_controller      = puzzlebot_control.pid_controller:main',

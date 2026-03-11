@@ -58,15 +58,38 @@ class DataStore:
             self.t0=time.time(); self.waypoints=[]
 
     def snapshot(self):
-        """Return ALL data — no truncation."""
+        """Return latest data downsampled to at most 400 points using block averaging.
+
+        Naive stride sampling (arr[::step]) aliases high-frequency signals into
+        apparent noise as the buffer fills. Block averaging (mean of each block)
+        acts as a proper anti-aliasing low-pass filter so the charts stay smooth
+        regardless of how long the run has been going.
+        """
         with self.lock:
-            # Downsample if > 1000 points for browser perf
             n = len(self.buf['t'])
-            step = max(1, n // 1000)
+            target = 400
             r = {}
-            for k, v in self.buf.items():
-                arr = list(v)
-                r[k] = arr[::step] if step > 1 else arr
+            if n <= target:
+                # Not enough points yet — send everything as-is
+                for k, v in self.buf.items():
+                    r[k] = list(v)
+            else:
+                # Block-average: split each series into `target` equal chunks,
+                # take the mean of each chunk. Preserves envelope, kills aliasing.
+                arr_t = np.array(self.buf['t'])
+                step = n / target  # float — use slice indices
+                for k, v in self.buf.items():
+                    arr = np.array(v, dtype=float)
+                    # Build block means
+                    out = []
+                    for i in range(target):
+                        lo = int(i * step)
+                        hi = int((i + 1) * step)
+                        if hi > lo:
+                            out.append(float(arr[lo:hi].mean()))
+                        elif lo < n:
+                            out.append(float(arr[lo]))
+                    r[k] = out
             r['ctrl']=self.ctrl; r['arrived']=self.arrived
             r['gx']=self.gx; r['gy']=self.gy
             r['wp']=self.wp; r['wp_total']=self.wp_total
@@ -91,7 +114,7 @@ class Handler(BaseHTTPRequestHandler):
                 while True:
                     s=store.snapshot()
                     self.wfile.write(f'data: {json.dumps(s,default=float)}\n\n'.encode())
-                    self.wfile.flush(); time.sleep(0.1)
+                    self.wfile.flush(); time.sleep(0.25)
             except: pass
         elif p.startswith('/api/switch'):
             q=urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -366,45 +389,60 @@ function recolor(c){
  tg.textContent=c;tg.style.color=col;tg.style.background=col+'10';
 }
 
+// ── Smooth rendering: decouple SSE data from paint via requestAnimationFrame ──
+// SSE just stores the latest frame; rAF loop renders at most ~15fps.
+let _pending=null, _rafId=null, _lastRender=0;
+
 const es=new EventSource('/stream');
 es.onmessage=function(ev){
- const d=JSON.parse(ev.data);
+ _pending=JSON.parse(ev.data);
+ if(!_rafId) _rafId=requestAnimationFrame(render);
+};
+es.onerror=()=>{document.getElementById('dot').className='dot off'};
+
+function render(ts){
+ _rafId=null;
+ // Cap render rate to ~15 fps (66 ms between frames)
+ if(ts-_lastRender < 66){ _rafId=requestAnimationFrame(render); return; }
+ _lastRender=ts;
+ const d=_pending; if(!d) return;
+ _pending=null;
+
  const N=d.t.length; if(N<3)return;
  if(d.ctrl!==ctrl){ctrl=d.ctrl;recolor(ctrl);}
  const lb=d.t.map(v=>v.toFixed(1));
 
- // Time series — FULL history
- c0.data.labels=lb; c0.data.datasets[0].data=d.V; c0.update();
- c1.data.labels=lb; c1.data.datasets[0].data=d.dist; c1.update();
- c2.data.labels=lb; c2.data.datasets[0].data=d.v; c2.data.datasets[1].data=d.w; c2.update();
- c4.data.labels=lb; c4.data.datasets[0].data=d.s_v; c4.data.datasets[1].data=d.s_w; c4.update();
- c5.data.labels=lb; c5.data.datasets[0].data=d.angle_err.map(a=>a*180/Math.PI); c5.update();
- c6.data.labels=lb; c6.data.datasets[0].data=d.pv; c6.data.datasets[1].data=d.pw; c6.update();
+ // Time series — use update('none') to skip animation scheduler overhead
+ c0.data.labels=lb; c0.data.datasets[0].data=d.V; c0.update('none');
+ c1.data.labels=lb; c1.data.datasets[0].data=d.dist; c1.update('none');
+ c2.data.labels=lb; c2.data.datasets[0].data=d.v; c2.data.datasets[1].data=d.w; c2.update('none');
+ c4.data.labels=lb; c4.data.datasets[0].data=d.s_v; c4.data.datasets[1].data=d.s_w; c4.update('none');
+ c5.data.labels=lb; c5.data.datasets[0].data=d.angle_err.map(a=>a*180/Math.PI); c5.update('none');
+ c6.data.labels=lb; c6.data.datasets[0].data=d.pv; c6.data.datasets[1].data=d.pw; c6.update('none');
 
  // V̇ numerical derivative
  let vdot=[];
  for(let i=1;i<N;i++){let dt=d.t[i]-d.t[i-1];if(dt<1e-6)dt=0.01;vdot.push((d.V[i]-d.V[i-1])/dt);}
- c3.data.labels=lb.slice(1); c3.data.datasets[0].data=vdot; c3.update();
+ c3.data.labels=lb.slice(1); c3.data.datasets[0].data=vdot; c3.update('none');
 
- // Phase portraits — FULL trajectory, sliding surfaces overlaid
- let pd=[],pa=[],pv=[];
+ // Phase portraits
+ let pd=[],pa=[],pv_d=[];
  for(let i=0;i<N;i++){
    pd.push({x:d.dist[i],y:d.dist_dot[i]});
    pa.push({x:d.angle_err[i]*180/Math.PI,y:d.angle_dot[i]*180/Math.PI});
-   pv.push({x:d.v[i],y:d.w[i]});
+   pv_d.push({x:d.v[i],y:d.w[i]});
  }
  c_pd.data.datasets[0].data=pd;
- // Update sliding surface line span based on data range
  let maxdd=1;for(let i=0;i<N;i++)maxdd=Math.max(maxdd,Math.abs(d.dist_dot[i]));
  c_pd.data.datasets[1].data=[{x:0,y:-maxdd*1.2},{x:0,y:maxdd*1.2}];
- c_pd.update();
+ c_pd.update('none');
 
  c_pa.data.datasets[0].data=pa;
  let maxad=100;for(let i=0;i<N;i++)maxad=Math.max(maxad,Math.abs(d.angle_dot[i]*180/Math.PI));
  c_pa.data.datasets[1].data=[{x:0,y:-maxad*1.2},{x:0,y:maxad*1.2}];
- c_pa.update();
+ c_pa.update('none');
 
- c_pv.data.datasets[0].data=pv; c_pv.update();
+ c_pv.data.datasets[0].data=pv_d; c_pv.update('none');
 
  // Sliding phase portrait: (s_v, ṡ_v)
  let ps=[];
@@ -415,18 +453,18 @@ es.onmessage=function(ev){
  c_ps.data.datasets[0].data=ps;
  let maxsv=0.1;for(let p of ps)maxsv=Math.max(maxsv,Math.abs(p.y));
  c_ps.data.datasets[1].data=[{x:0,y:-maxsv*1.2},{x:0,y:maxsv*1.2}];
- c_ps.update();
+ c_ps.update('none');
 
- // XY trajectory — full path
+ // XY trajectory
  let xy=[];for(let i=0;i<d.x.length;i++)xy.push({x:d.x[i],y:d.y[i]});
  cxy.data.datasets[0].data=xy;
  cxy.data.datasets[1].data=[{x:d.gx,y:d.gy}];
  if(d.waypoints&&d.waypoints.length>0)
    cxy.data.datasets[2].data=d.waypoints.map(p=>({x:p[0],y:p[1]}));
  cxy.data.datasets[3].data=drawnPts.map(p=>({x:p[0],y:p[1]}));
- cxy.update();
+ cxy.update('none');
 
- // Stats
+ // Stats bar
  const L=N-1;
  document.getElementById('s0').textContent=d.t[L].toFixed(1)+'s';
  document.getElementById('s1').textContent=d.V[L].toFixed(4);
@@ -441,8 +479,10 @@ es.onmessage=function(ev){
  document.getElementById('sA').textContent=d.arrived?'ARRIVED':'tracking';
  document.getElementById('dot').className='dot on';
  document.getElementById('wpi').textContent=d.wp_total>0?'WP '+d.wp+'/'+d.wp_total:'';
-};
-es.onerror=()=>{document.getElementById('dot').className='dot off'};
+
+ // If new data arrived while we were rendering, schedule another frame
+ if(_pending) _rafId=requestAnimationFrame(render);
+}
 </script></body></html>"""
 
 def main(args=None):

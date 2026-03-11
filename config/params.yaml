@@ -34,44 +34,44 @@ terrain:
 goal:
   x: 2.0
   y: 1.5
-  tolerance: 0.05           # arrival tolerance [m]
+  tolerance: 0.1           # arrival tolerance [m]
 
 # ── PID Controller ────────────────────────────────────────────────────
 pid:
-  linear_kp: 0.80
+  linear_kp: 0.60
   linear_ki: 0.02
-  linear_kd: 0.15
-  angular_kp: 2.50
-  angular_ki: 0.02
-  angular_kd: 0.30
-  integral_windup_limit: 5.0
+  linear_kd: 0.10
+  angular_kp: 1.20
+  angular_ki: 0.005
+  angular_kd: 0.15
+  integral_windup_limit: 2.0
 
 # ── Sliding Mode Controller (SMC) ────────────────────────────────────
 smc:
-  lambda_v: 1.50            # sliding surface gain (linear)
-  lambda_w: 3.50            # sliding surface gain (angular)
-  eta_v: 0.15               # switching gain (linear)
-  eta_w: 0.80               # switching gain (angular)
-  phi_v: 0.05               # boundary layer thickness (linear)
-  phi_w: 0.10               # boundary layer thickness (angular)
+  lambda_v: 1.20            # sliding surface gain (linear)
+  lambda_w: 2.50            # sliding surface gain (angular)
+  eta_v: 0.10               # switching gain (linear)
+  eta_w: 0.40               # switching gain (angular)  — was 0.80
+  phi_v: 0.15               # boundary layer thickness (linear) — was 0.05
+  phi_w: 0.30               # boundary layer thickness (angular) — was 0.10
 
 # ── Integral Sliding Mode Controller (ISMC) ──────────────────────────
 ismc:
-  alpha_v: 1.20             # integral surface weight (linear)
-  alpha_w: 2.50             # integral surface weight (angular)
+  alpha_v: 0.80             # integral surface weight (linear)  — was 1.20
+  alpha_w: 1.50             # integral surface weight (angular) — was 2.50
   beta_v: 0.60              # equivalent control gain (linear)
-  beta_w: 1.00              # equivalent control gain (angular)
-  eta_v: 0.10               # switching gain (linear)
-  eta_w: 0.60               # switching gain (angular)
-  phi_v: 0.04               # boundary layer (linear)
-  phi_w: 0.08               # boundary layer (angular)
+  beta_w: 0.80              # equivalent control gain (angular) — was 1.00
+  eta_v: 0.08               # switching gain (linear)
+  eta_w: 0.35               # switching gain (angular)  — was 0.60
+  phi_v: 0.12               # boundary layer (linear)   — was 0.04
+  phi_w: 0.25               # boundary layer (angular)  — was 0.08
 
 # ── Computed Torque Controller (CTC) ──────────────────────────────────
 ctc:
-  kp_v: 2.50                # position gain (linear)
-  kd_v: 1.20                # velocity gain (linear)
-  kp_w: 4.00                # position gain (angular)
-  kd_w: 1.80                # velocity gain (angular)
+  kp_v: 2.00                # position gain (linear)   — was 2.50
+  kd_v: 0.80                # velocity gain (linear)   — was 1.20
+  kp_w: 3.00                # position gain (angular)  — was 4.00
+  kd_w: 1.00                # velocity gain (angular)  — was 1.80
 
 # ── Port-Hamiltonian Controller (Ferguson et al. 2018) ────────────────
 #    Energy shaping + damping injection on chained structure

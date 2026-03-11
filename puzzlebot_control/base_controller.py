@@ -66,6 +66,8 @@ class BaseController(Node):
         # Phase data history (for derivatives)
         self.prev_dist = 0.0
         self.prev_angle_err = 0.0
+        self.dist_dot_filt = 0.0   # EMA low-pass filtered dist derivative
+        self.angle_dot_filt = 0.0  # EMA low-pass filtered angle derivative
 
         # Publishers
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
@@ -135,6 +137,7 @@ class BaseController(Node):
         self.v_odom = self.w_odom = 0.0
         self.arrived = False
         self.prev_dist = self.prev_angle_err = 0.0
+        self.dist_dot_filt = self.angle_dot_filt = 0.0
         self.waypoints = []
         self.wp_index = 0
         self.trajectory_mode = False
@@ -173,9 +176,15 @@ class BaseController(Node):
         dist, angle_err, dx, dy = self.get_errors()
         self._advance_waypoint(dist)
 
-        # Phase derivatives
-        dist_dot = (dist - self.prev_dist) / self.dt if self.dt > 0 else 0.0
-        angle_dot = (angle_err - self.prev_angle_err) / self.dt if self.dt > 0 else 0.0
+        # Phase derivatives — EMA low-pass filter (α=0.15 ≈ 15 Hz cutoff at 100 Hz)
+        # Raw finite differences at 100 Hz amplify odometry noise; filter before using.
+        raw_dist_dot = (dist - self.prev_dist) / self.dt if self.dt > 0 else 0.0
+        raw_angle_dot = (angle_err - self.prev_angle_err) / self.dt if self.dt > 0 else 0.0
+        _alpha = 0.15
+        self.dist_dot_filt = _alpha * raw_dist_dot + (1.0 - _alpha) * self.dist_dot_filt
+        self.angle_dot_filt = _alpha * raw_angle_dot + (1.0 - _alpha) * self.angle_dot_filt
+        dist_dot = self.dist_dot_filt
+        angle_dot = self.angle_dot_filt
         self.prev_dist = dist
         self.prev_angle_err = angle_err
 
@@ -203,8 +212,12 @@ class BaseController(Node):
 
         v = np.clip(v, -self.v_max, self.v_max)
         w = np.clip(w, -self.w_max, self.w_max)
-        if abs(angle_err) > 0.8:
-            v *= 0.15
+        # Smooth heading penalty: full speed when aligned, tapers via cosine,
+        # floor at 15% so the robot can still translate to escape local oscillations.
+        # Replaces the old hard cliff (if |angle_err|>0.8: v*=0.15) that caused
+        # sawtooth oscillations in distance error.
+        v_scale = max(0.15, float(np.cos(np.clip(abs(angle_err), 0.0, np.pi / 2))))
+        v *= v_scale
 
         cmd = Twist()
         cmd.linear.x = float(v)
