@@ -1,0 +1,31 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Plane Cell Count: 20
+      Cell Size: 0.5
+    - Class: rviz_default_plugins/RobotModel
+      Name: RobotModel
+      Description Topic: /robot_description
+      TF Prefix: ""
+    - Class: rviz_default_plugins/TF
+      Name: TF
+      Show Axes: true
+      Show Names: true
+    - Class: rviz_default_plugins/Odometry
+      Name: Odometry
+      Topic: /odom
+      Keep: 200
+      Shape: Arrow
+    - Class: rviz_default_plugins/Path
+      Name: Path
+      Topic: /trajectory
+      Color: 255; 100; 0
+  Global Options:
+    Fixed Frame: odom
+  Window Geometry:
+    Width: 1200
+    Height: 800

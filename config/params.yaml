@@ -1,0 +1,92 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  PuzzleBot Control — Master Configuration
+# ═══════════════════════════════════════════════════════════════════════
+
+# ── Robot Physical Parameters (from PuzzleBot MCR2-1000) ──────────────
+robot:
+  wheel_base: 0.19          # L — distance between wheels [m]
+  wheel_radius: 0.05        # r — wheel radius [m]
+  mass: 0.5                 # effective mass [kg]
+  inertia: 0.01             # effective rotational inertia [kg·m²]
+  max_linear_vel: 0.5       # v_max [m/s]
+  max_angular_vel: 3.0      # ω_max [rad/s]
+
+# ── Simulation ────────────────────────────────────────────────────────
+sim:
+  dt: 0.01                  # integration timestep [s]
+  publish_rate: 100.0       # Hz
+  initial_x: 0.0
+  initial_y: 0.0
+  initial_theta: 0.0
+
+# ── Terrain Perturbation ──────────────────────────────────────────────
+terrain:
+  enabled: true
+  type: "mixed"             # "none", "sinusoidal", "step", "noise", "mixed"
+  amplitude_v: 0.05         # force perturbation on v [m/s²]
+  amplitude_w: 0.1          # torque perturbation on ω [rad/s²]
+  frequency: 0.5            # Hz (for sinusoidal)
+  step_interval: 5.0        # seconds between step perturbations
+  noise_sigma_v: 0.02
+  noise_sigma_w: 0.04
+
+# ── Goal / Waypoint ──────────────────────────────────────────────────
+goal:
+  x: 2.0
+  y: 1.5
+  tolerance: 0.05           # arrival tolerance [m]
+
+# ── PID Controller ────────────────────────────────────────────────────
+pid:
+  linear_kp: 0.80
+  linear_ki: 0.02
+  linear_kd: 0.15
+  angular_kp: 2.50
+  angular_ki: 0.02
+  angular_kd: 0.30
+  integral_windup_limit: 5.0
+
+# ── Sliding Mode Controller (SMC) ────────────────────────────────────
+smc:
+  lambda_v: 1.50            # sliding surface gain (linear)
+  lambda_w: 3.50            # sliding surface gain (angular)
+  eta_v: 0.15               # switching gain (linear)
+  eta_w: 0.80               # switching gain (angular)
+  phi_v: 0.05               # boundary layer thickness (linear)
+  phi_w: 0.10               # boundary layer thickness (angular)
+
+# ── Integral Sliding Mode Controller (ISMC) ──────────────────────────
+ismc:
+  alpha_v: 1.20             # integral surface weight (linear)
+  alpha_w: 2.50             # integral surface weight (angular)
+  beta_v: 0.60              # equivalent control gain (linear)
+  beta_w: 1.00              # equivalent control gain (angular)
+  eta_v: 0.10               # switching gain (linear)
+  eta_w: 0.60               # switching gain (angular)
+  phi_v: 0.04               # boundary layer (linear)
+  phi_w: 0.08               # boundary layer (angular)
+
+# ── Computed Torque Controller (CTC) ──────────────────────────────────
+ctc:
+  kp_v: 2.50                # position gain (linear)
+  kd_v: 1.20                # velocity gain (linear)
+  kp_w: 4.00                # position gain (angular)
+  kd_w: 1.80                # velocity gain (angular)
+
+# ── Port-Hamiltonian Controller (Ferguson et al. 2018) ────────────────
+#    Energy shaping + damping injection on chained structure
+#    Vd = ½ w^T L w,  Dd = Dw + D̂ + (k/w₁²) Qw^T e₁e₁^T Qw
+port_hamiltonian:
+  L1: 1.00                  # potential weight on w₁
+  L2: 8.00                  # potential weight on w₂
+  L3: 0.01                  # potential weight on w₃
+  D_hat: 2.00               # injected damping coefficient
+  k_barrier: 0.50           # barrier gain k/w₁² (prevents finite-time singularity)
+  angle_blend: 2.50         # direct angle correction blend factor
+
+# ── Lyapunov Benchmark ────────────────────────────────────────────────
+benchmark:
+  duration: 30.0            # seconds to run each controller
+  sample_rate: 50.0         # Hz for logging
+  output_dir: "~/puzzlebot_benchmarks"
+  controllers: ["pid", "smc", "ismc", "ctc", "ph"]
