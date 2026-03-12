@@ -200,6 +200,20 @@ def generate_launch_description():
     ld.add_action(ctc_node)
     ld.add_action(ph_node)
 
+    # ── Pose Fusion (odom + Gazebo GT complementary filter) ────────
+    ld.add_action(Node(
+        package='puzzlebot_control',
+        executable='pose_fusion',
+        name='pose_fusion',
+        output='screen',
+        parameters=[{
+            'alpha': 0.85,         # 0=trust GT only, 1=trust odom only
+            'model_name': 'puzzlebot',
+            'remap_odom': False,   # set True to feed fused pose back to controllers
+            'publish_rate': 50.0,
+        }],
+    ))
+
     # Live dashboard at http://localhost:8080
     ld.add_action(Node(
         package='puzzlebot_control',

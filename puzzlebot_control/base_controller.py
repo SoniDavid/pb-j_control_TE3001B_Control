@@ -172,9 +172,17 @@ class BaseController(Node):
         if not self.active:
             return
 
+        # Once arrived, keep publishing zero and do nothing until a new goal arrives
+        if self.arrived:
+            self.cmd_pub.publish(Twist())
+            return
+
         self.ctrl_time += self.dt
         dist, angle_err, dx, dy = self.get_errors()
         self._advance_waypoint(dist)
+        # Re-evaluate errors after a possible waypoint advance so that the
+        # arrival check and the control law both use the *current* goal.
+        dist, angle_err, dx, dy = self.get_errors()
 
         # Phase derivatives — EMA low-pass filter (α=0.15 ≈ 15 Hz cutoff at 100 Hz)
         # Raw finite differences at 100 Hz amplify odometry noise; filter before using.

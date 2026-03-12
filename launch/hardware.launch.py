@@ -2,12 +2,15 @@
 PuzzleBot Hardware Launch
 ──────────────────────────
 Launches everything needed to run the real PuzzleBot hardware:
-  • puzzlebot_hardware  — hardware bridge (cmd_vel ↔ motor PWM + odometry)
+  • puzzlebot_hardware  — hardware bridge (cmd_vel ↔ motor PWM + encoder odometry)
   • robot_state_publisher — URDF/TF for RViz
   • All 5 controllers     — same as simulation (only active one publishes)
   • dashboard             — live web dashboard at http://localhost:8080
   • rviz2                 — optional visualisation
   • teleop_keyboard       — optional keyboard teleop
+
+NOTE: Does NOT launch Gazebo. For simulation use gazebo.launch.py or sim.launch.py.
+The hardware bridge is the only plant node — it owns /odom and /cmd_vel.
 
 Usage
 ─────
@@ -18,8 +21,7 @@ Usage
   ros2 launch puzzlebot_control hardware.launch.py
 
   # With option overrides:
-  ros2 launch puzzlebot_control hardware.launch.py \\
-      controller:=smc goal_x:=1.5 goal_y:=1.0 kp:=0.4 ki:=1.0
+  ros2 launch puzzlebot_control hardware.launch.py controller:=smc goal_x:=1.5 goal_y:=1.0
 
 Arguments
 ─────────
@@ -30,27 +32,23 @@ Arguments
   wheel_base  : 0.19
   wheel_radius: 0.05
   rpm_max     : 110.0
-  kp / ki / kd: PID wheel-speed gains (0.3 / 0.8 / 0.05)
   rviz        : true | false
   teleop      : false | true
 """
 
-import os
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess
+from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration, Command
 from launch.conditions import IfCondition
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 from launch.substitutions import PathJoinSubstitution
-from ament_index_python.packages import get_package_share_directory
 
 
 def generate_launch_description():
 
     pkg_share = FindPackageShare('puzzlebot_control')
-    pkg_dir   = get_package_share_directory('puzzlebot_control')
 
     # ── Arguments ─────────────────────────────────────────────────────
     args = [
@@ -63,54 +61,11 @@ def generate_launch_description():
         DeclareLaunchArgument('wheel_base',   default_value='0.19'),
         DeclareLaunchArgument('wheel_radius', default_value='0.05'),
         DeclareLaunchArgument('rpm_max',      default_value='110.0'),
-        DeclareLaunchArgument('kp',           default_value='0.3'),
-        DeclareLaunchArgument('ki',           default_value='0.8'),
-        DeclareLaunchArgument('kd',           default_value='0.05'),
         DeclareLaunchArgument('rviz',         default_value='true'),
         DeclareLaunchArgument('teleop',       default_value='false'),
-        DeclareLaunchArgument('world',        default_value='terrain',
-            description='Gazebo world: terrain or empty'),
-        DeclareLaunchArgument('gui',          default_value='true',
-            description='Launch Gazebo GUI'),
     ]
 
-    # ── Gazebo world ───────────────────────────────────────────────────
-    world_file = os.path.join(pkg_dir, 'worlds', 'terrain.world')
-
-    gazebo_server = ExecuteProcess(
-        cmd=['gazebo', '--verbose', '-s', 'libgazebo_ros_factory.so',
-             world_file],
-        output='screen',
-    )
-
-    spawn_robot = Node(
-        package='gazebo_ros',
-        executable='spawn_entity.py',
-        arguments=[
-            '-topic', 'robot_description',
-            '-entity', 'puzzlebot',
-            '-x', '0.0', '-y', '0.0', '-z', '0.05',
-        ],
-        output='screen',
-    )
-
-    terrain_node = Node(
-        package='puzzlebot_control',
-        executable='terrain_perturb',
-        name='terrain_perturbation',
-        output='screen',
-        parameters=[{
-            'enabled': True,
-            'type': 'mixed',
-            'amplitude_v': 0.03,
-            'amplitude_w': 0.06,
-            'frequency': 0.5,
-            'noise_sigma_v': 0.01,
-            'noise_sigma_w': 0.02,
-        }],
-    )
-
-    # ── Robot description (same URDF as sim, visual/TF only) ──────────
+    # ── Robot description (URDF for TF/RViz only — no physics) ───────
     xacro_file = PathJoinSubstitution([pkg_share, 'urdf', 'puzzlebot_gazebo.urdf.xacro'])
     robot_description = ParameterValue(Command(['xacro ', xacro_file]), value_type=str)
 
@@ -131,9 +86,6 @@ def generate_launch_description():
             'wheel_base':     LaunchConfiguration('wheel_base'),
             'wheel_radius':   LaunchConfiguration('wheel_radius'),
             'rpm_max':        LaunchConfiguration('rpm_max'),
-            'kp':             LaunchConfiguration('kp'),
-            'ki':             LaunchConfiguration('ki'),
-            'kd':             LaunchConfiguration('kd'),
             'max_linear_vel':  0.5,
             'max_angular_vel': 3.0,
             'sample_time':     0.05,
@@ -223,10 +175,7 @@ def generate_launch_description():
     for a in args:
         ld.add_action(a)
 
-    ld.add_action(gazebo_server)
     ld.add_action(robot_state_pub)
-    ld.add_action(spawn_robot)
-    ld.add_action(terrain_node)
     ld.add_action(hardware_node)
 
     ld.add_action(pid_node)

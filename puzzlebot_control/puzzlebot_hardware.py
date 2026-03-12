@@ -25,8 +25,10 @@ Micro-ROS.  The controller-facing interface is identical to the simulator:
 Architecture
 ────────────
   cmd_vel (v, ω)  →  differential kinematics  →  RPM setpoints (left, right)
-                   →  two incremental PID loops  →  PWM commands to ESP32
-  RPM feedback    →  odometry integration         →  /odom, TF
+                   →  linear feedforward         →  PWM commands to ESP32
+  RPM feedback    →  odometry integration only   →  /odom, TF
+
+
 
 Differential-drive kinematics
 ──────────────────────────────
@@ -50,61 +52,17 @@ def _clamp(v: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, v))
 
 
-class PIDWheel:
-    """Incremental (velocity-form) PID for a single wheel."""
+def _rpm_to_pwm(rpm: float, rpm_max: float, deadband: float = 2.0) -> int:
+    """Direct feedforward: linear RPM → PWM mapping.
 
-    def __init__(self, kp: float, ki: float, kd: float, rpm_max: float, ts: float):
-        self.kp = kp
-        self.ki = ki
-        self.kd = kd
-        self.rpm_max = rpm_max
-        self.ts = ts
-        self._u_prev  = 0.0
-        self._e_prev  = 0.0
-        self._e_prev2 = 0.0
-        self._dir_prev = None
-
-    def reset(self):
-        self._u_prev  = 0.0
-        self._e_prev  = 0.0
-        self._e_prev2 = 0.0
-        self._dir_prev = None
-
-    def update(self, ref_rpm: float, meas_rpm: float) -> int:
-        """
-        Returns Int16 PWM command in range −255…+255.
-        ref_rpm  : desired wheel speed (signed, RPM)
-        meas_rpm : measured wheel speed (signed, RPM)
-        """
-        fwd = ref_rpm >= 0.0
-        ref_pct  = _clamp(abs(ref_rpm)  * 100.0 / self.rpm_max, 0.0, 105.0)
-        meas_pct = _clamp(abs(meas_rpm) * 100.0 / self.rpm_max, 0.0, 130.0)
-
-        stopped = ref_pct < 0.2
-
-        # Direction reversal → reset integrator
-        if self._dir_prev is not None and fwd != self._dir_prev:
-            self.reset()
-        self._dir_prev = fwd
-
-        if stopped:
-            self.reset()
-            return 0
-
-        e = ref_pct - meas_pct
-        delta_u = (
-            self.kp * (e - self._e_prev)
-            + self.ki * self.ts * e
-            + (self.kd / self.ts) * (e - 2.0 * self._e_prev + self._e_prev2)
-        )
-        u_pct = _clamp(self._u_prev + delta_u, 0.0, 100.0)
-        duty  = int(_clamp(u_pct * 255.0 / 100.0 + 0.5, 1.0, 255.0))
-
-        self._e_prev2 = self._e_prev
-        self._e_prev  = e
-        self._u_prev  = u_pct
-
-        return duty if fwd else -duty
+    PWM = sign(rpm) * round(|rpm| / rpm_max * 255)
+    Returns 0 if |rpm| < deadband (prevents motor hum at rest).
+    Returns Int16-compatible int in range -255…+255.
+    """
+    if abs(rpm) < deadband:
+        return 0
+    duty = int(_clamp(abs(rpm) / rpm_max * 255.0 + 0.5, 1.0, 255.0))
+    return duty if rpm >= 0.0 else -duty
 
 
 class PuzzleBotHardware(Node):
@@ -120,25 +78,15 @@ class PuzzleBotHardware(Node):
         self.declare_parameter('sample_time',    0.05)    # seconds  (20 Hz)
         self.declare_parameter('max_linear_vel', 0.5)
         self.declare_parameter('max_angular_vel', 3.0)
+        self.declare_parameter('pwm_deadband',   2.0)     # RPM below which PWM=0
 
-        # PID gains (same defaults as pid_velocity_controller)
-        self.declare_parameter('kp', 0.3)
-        self.declare_parameter('ki', 0.8)
-        self.declare_parameter('kd', 0.05)
-
-        self.L    = self.get_parameter('wheel_base').value
-        self.r    = self.get_parameter('wheel_radius').value
-        self.ts   = self.get_parameter('sample_time').value
-        self.v_max = self.get_parameter('max_linear_vel').value
-        self.w_max = self.get_parameter('max_angular_vel').value
-        rpm_max   = self.get_parameter('rpm_max').value
-        kp = self.get_parameter('kp').value
-        ki = self.get_parameter('ki').value
-        kd = self.get_parameter('kd').value
-
-        # ── PID controllers ────────────────────────────────────────
-        self._pid_left  = PIDWheel(kp, ki, kd, rpm_max, self.ts)
-        self._pid_right = PIDWheel(kp, ki, kd, rpm_max, self.ts)
+        self.L       = self.get_parameter('wheel_base').value
+        self.r       = self.get_parameter('wheel_radius').value
+        self.ts      = self.get_parameter('sample_time').value
+        self.v_max   = self.get_parameter('max_linear_vel').value
+        self.w_max   = self.get_parameter('max_angular_vel').value
+        self.rpm_max = self.get_parameter('rpm_max').value
+        self.deadband = self.get_parameter('pwm_deadband').value
 
         # ── Setpoints (from cmd_vel) ────────────────────────────────
         self._ref_rpm_left  = 0.0
@@ -176,7 +124,7 @@ class PuzzleBotHardware(Node):
         self.get_logger().info(
             f'PuzzleBot Hardware Bridge started  '
             f'L={self.L} m  r={self.r} m  Ts={self.ts*1000:.0f} ms  '
-            f'Kp={kp}  Ki={ki}  Kd={kd}')
+            f'rpm_max={self.rpm_max}  (direct feedforward, no inner PID)')
         self.get_logger().info(
             '  Start micro-ROS agent:  '
             'ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyUSB0')
@@ -209,8 +157,6 @@ class PuzzleBotHardware(Node):
             self._theta = float(d.get('theta', 0.0))
         except Exception:
             self._x = self._y = self._theta = 0.0
-        self._pid_left.reset()
-        self._pid_right.reset()
         self._ref_rpm_left = self._ref_rpm_right = 0.0
         self.get_logger().info('Odometry reset.')
 
@@ -219,9 +165,11 @@ class PuzzleBotHardware(Node):
     # ──────────────────────────────────────────────────────────────
 
     def _control_loop(self):
-        # ── PID → PWM ───────────────────────────────────────────────
-        pwm_l = self._pid_left.update(self._ref_rpm_left,  self._rpm_left)
-        pwm_r = self._pid_right.update(self._ref_rpm_right, self._rpm_right)
+        # ── Feedforward: RPM setpoint → PWM (no inner feedback loop) ──
+        # The outer pose controller (PID/SMC/CTC/…) is the only closed loop.
+        # Measured RPM is used below only for odometry, not for motor control.
+        pwm_l = _rpm_to_pwm(self._ref_rpm_left,  self.rpm_max, self.deadband)
+        pwm_r = _rpm_to_pwm(self._ref_rpm_right, self.rpm_max, self.deadband)
 
         msg_l = Int16(); msg_l.data = pwm_l
         msg_r = Int16(); msg_r.data = pwm_r

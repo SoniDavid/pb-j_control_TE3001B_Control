@@ -33,6 +33,7 @@ setup(
             'puzzlebot_sim       = puzzlebot_control.puzzlebot_sim:main',
             # ── Hardware bridge ──
             'puzzlebot_hardware  = puzzlebot_control.puzzlebot_hardware:main',
+            'gazebo_mirror       = puzzlebot_control.gazebo_mirror:main',
             'terrain_perturb     = puzzlebot_control.terrain_perturbation:main',
             # ── Controllers ──
             'pid_controller      = puzzlebot_control.pid_controller:main',
@@ -44,6 +45,8 @@ setup(
             'teleop_keyboard     = puzzlebot_control.teleop_keyboard:main',
             # ── Dashboard ──
             'dashboard           = puzzlebot_control.dashboard:main',
+            # ── Sensor Fusion ──
+            'pose_fusion         = puzzlebot_control.pose_fusion:main',
             # ── Benchmark ──
             'lyapunov_benchmark  = puzzlebot_control.lyapunov_benchmark:main',
         ],
