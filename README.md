@@ -1,9 +1,11 @@
 # PuzzleBot Nonholonomic Control Framework
+| Nombre                         | Matrícula  |
+|--------------------------------|-----------|
+| David Alejandro Soni Cuevas    | A01571777 |
+| Irvin David Ornelas Garcia     | A00839065 |
+| Abraham de Jesús Maldonado Mata| A00838581 |
+| David Gilberto Lomelí          | A01571193 |
 
-David Alejandro Soni Cuevas	| A01571777
-Irvin David Ornelas Garcia	| A00839065
-Abraham de Jesús Maldonado Mata	| A00838581
-David Gilberto Lomelí 		| A01571193
 
 Five controllers for differential-drive robots with terrain perturbations, Lyapunov stability analysis, phase portraits with sliding surface visualization, and custom trajectory tracking.
 
