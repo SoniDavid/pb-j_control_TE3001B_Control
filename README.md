@@ -1,5 +1,10 @@
 # PuzzleBot Nonholonomic Control Framework
 
+David Alejandro Soni Cuevas	| A01571777
+Irvin David Ornelas Garcia	| A00839065
+Abraham de Jesús Maldonado Mata	| A00838581
+David Gilberto Lomelí 		| A01571193
+
 Five controllers for differential-drive robots with terrain perturbations, Lyapunov stability analysis, phase portraits with sliding surface visualization, and custom trajectory tracking.
 
 Based on: **Ferguson, Donaire, Renton & Middleton (2018)** — *A port-Hamiltonian approach to the control of nonholonomic systems* (arXiv:1801.06954v1).
